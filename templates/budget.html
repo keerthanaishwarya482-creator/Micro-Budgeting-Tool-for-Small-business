@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Budget Management - Micro Budgeting</title>
+
+    <style>
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f5f3fa;
+            color: #292735;
+        }
+
+
+        /* ================= NAVBAR ================= */
+
+        .navbar {
+            background: linear-gradient(
+                135deg,
+                #54257d,
+                #7b3fb3
+            );
+
+            color: white;
+
+            padding: 17px 40px;
+
+            display: flex;
+
+            justify-content: space-between;
+
+            align-items: center;
+
+            box-shadow: 0 4px 18px rgba(60, 30, 90, 0.18);
+
+            position: sticky;
+
+            top: 0;
+
+            z-index: 100;
+        }
+
+        .brand {
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .brand span {
+            font-size: 25px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            padding: 9px 13px;
+            border-radius: 8px;
+            font-size: 13px;
+            transition: 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .logout {
+            background: #e74c3c;
+        }
+
+        .logout:hover {
+            background: #c0392b !important;
+        }
+
+
+        /* ================= MAIN ================= */
+
+        .container {
+            width: 94%;
+            max-width: 1100px;
+            margin: 35px auto 50px;
+        }
+
+
+        /* ================= PAGE HEADER ================= */
+
+        .page-header {
+            background: linear-gradient(
+                135deg,
+                #ffffff,
+                #f5edff
+            );
+
+            border-radius: 20px;
+
+            padding: 32px;
+
+            margin-bottom: 25px;
+
+            box-shadow:
+                0 6px 25px rgba(65, 35, 95, 0.08);
+        }
+
+        .page-header h1 {
+            color: #54257d;
+            font-size: 30px;
+            margin-bottom: 9px;
+        }
+
+        .page-header p {
+            color: #777;
+            font-size: 15px;
+        }
+
+
+        /* ================= GRID ================= */
+
+        .main-grid {
+            display: grid;
+
+            grid-template-columns:
+                1fr 1fr;
+
+            gap: 22px;
+
+            margin-bottom: 25px;
+        }
+
+
+        /* ================= CARDS ================= */
+
+        .card {
+            background: white;
+
+            border-radius: 18px;
+
+            padding: 28px;
+
+            box-shadow:
+                0 5px 20px rgba(60, 35, 90, 0.08);
+        }
+
+        .card h2 {
+            color: #54257d;
+
+            font-size: 20px;
+
+            margin-bottom: 8px;
+        }
+
+        .card-description {
+            color: #888;
+
+            font-size: 13px;
+
+            line-height: 1.5;
+
+            margin-bottom: 25px;
+        }
+
+
+        /* ================= CURRENT BUDGET ================= */
+
+        .budget-display {
+            text-align: center;
+
+            background: linear-gradient(
+                135deg,
+                #f7f0ff,
+                #eee2fa
+            );
+
+            border-radius: 16px;
+
+            padding: 30px 20px;
+
+            margin-bottom: 22px;
+        }
+
+        .budget-icon {
+            font-size: 42px;
+
+            margin-bottom: 12px;
+        }
+
+        .budget-label {
+            color: #777;
+
+            font-size: 13px;
+
+            margin-bottom: 8px;
+        }
+
+        .budget-value {
+            color: #54257d;
+
+            font-size: 34px;
+
+            font-weight: bold;
+        }
+
+
+        /* ================= FORM ================= */
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+
+            color: #555;
+
+            font-size: 14px;
+
+            font-weight: bold;
+
+            margin-bottom: 8px;
+        }
+
+        .form-group input {
+            width: 100%;
+
+            padding: 14px;
+
+            border: 1px solid #ddd;
+
+            border-radius: 10px;
+
+            font-size: 16px;
+
+            outline: none;
+
+            background: #fafafa;
+        }
+
+        .form-group input:focus {
+            border-color: #7b3fb3;
+
+            background: white;
+
+            box-shadow:
+                0 0 0 3px rgba(123, 63, 179, 0.08);
+        }
+
+        .update-btn {
+            width: 100%;
+
+            border: none;
+
+            background: linear-gradient(
+                135deg,
+                #54257d,
+                #7b3fb3
+            );
+
+            color: white;
+
+            padding: 14px;
+
+            border-radius: 10px;
+
+            font-size: 15px;
+
+            font-weight: bold;
+
+            cursor: pointer;
+
+            transition: 0.3s;
+        }
+
+        .update-btn:hover {
+            transform: translateY(-2px);
+
+            box-shadow:
+                0 6px 15px rgba(84, 37, 125, 0.25);
+        }
+
+
+        /* ================= INFO CARDS ================= */
+
+        .info-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(3, 1fr);
+
+            gap: 15px;
+
+            margin-bottom: 25px;
+        }
+
+        .info-card {
+            background: white;
+
+            border-radius: 16px;
+
+            padding: 22px;
+
+            box-shadow:
+                0 5px 20px rgba(60, 35, 90, 0.08);
+
+            border-top: 4px solid #7b3fb3;
+        }
+
+        .info-icon {
+            font-size: 27px;
+
+            margin-bottom: 10px;
+        }
+
+        .info-card h3 {
+            color: #777;
+
+            font-size: 13px;
+
+            margin-bottom: 7px;
+        }
+
+        .info-value {
+            color: #54257d;
+
+            font-size: 21px;
+
+            font-weight: bold;
+        }
+
+
+        /* ================= TIPS ================= */
+
+        .tips {
+            background: linear-gradient(
+                135deg,
+                #54257d,
+                #7b3fb3
+            );
+
+            color: white;
+
+            border-radius: 18px;
+
+            padding: 27px;
+
+            margin-bottom: 28px;
+        }
+
+        .tips h2 {
+            margin-bottom: 12px;
+
+            font-size: 20px;
+        }
+
+        .tips p {
+            opacity: 0.9;
+
+            font-size: 14px;
+
+            line-height: 1.7;
+        }
+
+
+        /* ================= BUTTON ================= */
+
+        .back-btn {
+            display: inline-block;
+
+            background: #f0e8f8;
+
+            color: #54257d;
+
+            text-decoration: none;
+
+            padding: 11px 18px;
+
+            border-radius: 9px;
+
+            font-weight: bold;
+
+            font-size: 14px;
+
+            transition: 0.3s;
+        }
+
+        .back-btn:hover {
+            background: #e2d3ef;
+        }
+
+
+        /* ================= FOOTER ================= */
+
+        footer {
+            text-align: center;
+
+            color: #888;
+
+            font-size: 13px;
+
+            padding: 10px 10px 30px;
+        }
+
+
+        /* ================= RESPONSIVE ================= */
+
+        @media (max-width: 900px) {
+
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .info-grid {
+                grid-template-columns:
+                    repeat(3, 1fr);
+            }
+
+            .navbar {
+                flex-direction: column;
+
+                gap: 14px;
+            }
+
+            .nav-links {
+                justify-content: center;
+            }
+
+        }
+
+
+        @media (max-width: 600px) {
+
+            .container {
+                width: 92%;
+            }
+
+            .page-header {
+                padding: 24px;
+            }
+
+            .page-header h1 {
+                font-size: 25px;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .card {
+                padding: 22px;
+            }
+
+            .budget-value {
+                font-size: 29px;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+    <!-- ================= NAVIGATION ================= -->
+
+    <nav class="navbar">
+
+        <div class="brand">
+
+            <span>💰</span>
+
+            Micro Budgeting
+
+        </div>
+
+
+        <div class="nav-links">
+
+            <a href="/">
+                🏠 Dashboard
+            </a>
+
+            <a href="/transactions">
+                📊 Transactions
+            </a>
+
+            <a href="/add">
+                ➕ Add
+            </a>
+
+            <a href="/budget">
+                💵 Budget
+            </a>
+
+            <a href="/profile">
+                👤 Profile
+            </a>
+
+            <a
+                href="/logout"
+                class="logout"
+            >
+                🚪 Logout
+            </a>
+
+        </div>
+
+    </nav>
+
+
+    <!-- ================= MAIN ================= -->
+
+    <main class="container">
+
+
+        <!-- PAGE HEADER -->
+
+        <section class="page-header">
+
+            <h1>
+                🎯 Budget Management
+            </h1>
+
+            <p>
+                Set your business budget and keep track of your
+                spending in one place.
+            </p>
+
+        </section>
+
+
+        <!-- ================= MAIN CARDS ================= -->
+
+        <section class="main-grid">
+
+
+            <!-- CURRENT BUDGET -->
+
+            <div class="card">
+
+                <h2>
+                    💰 Current Budget
+                </h2>
+
+                <p class="card-description">
+                    This is the budget amount currently saved
+                    for your business.
+                </p>
+
+
+                <div class="budget-display">
+
+                    <div class="budget-icon">
+                        🎯
+                    </div>
+
+                    <div class="budget-label">
+                        Total Budget
+                    </div>
+
+                    <div class="budget-value">
+                        ₹{{ "%.2f"|format(budget|float) }}
+                    </div>
+
+                </div>
+
+
+                <a
+                    href="/"
+                    class="back-btn"
+                >
+                    ← Back to Dashboard
+                </a>
+
+            </div>
+
+
+            <!-- UPDATE BUDGET -->
+
+            <div class="card">
+
+                <h2>
+                    ✏️ Update Budget
+                </h2>
+
+                <p class="card-description">
+                    Enter a new budget amount. Your dashboard
+                    will automatically use the updated value.
+                </p>
+
+
+                <form
+                    method="POST"
+                    action="/budget"
+                >
+
+                    <div class="form-group">
+
+                        <label for="budget_amount">
+                            Budget Amount (₹)
+                        </label>
+
+                        <input
+                            type="number"
+                            id="budget_amount"
+                            name="budget_amount"
+                            step="0.01"
+                            min="0"
+                            placeholder="Enter your budget"
+                            required
+                        >
+
+                    </div>
+
+
+                    <button
+                        type="submit"
+                        class="update-btn"
+                    >
+                        💾 Update Budget
+                    </button>
+
+                </form>
+
+            </div>
+
+
+        </section>
+
+
+        <!-- ================= INFORMATION ================= -->
+
+        <section class="info-grid">
+
+
+            <div class="info-card">
+
+                <div class="info-icon">
+                    📌
+                </div>
+
+                <h3>
+                    Budget Status
+                </h3>
+
+                <div class="info-value">
+
+                    {% if budget > 0 %}
+                        Active
+                    {% else %}
+                        Not Set
+                    {% endif %}
+
+                </div>
+
+            </div>
+
+
+            <div class="info-card">
+
+                <div class="info-icon">
+                    📅
+                </div>
+
+                <h3>
+                    Planning
+                </h3>
+
+                <div class="info-value">
+                    Monthly
+                </div>
+
+            </div>
+
+
+            <div class="info-card">
+
+                <div class="info-icon">
+                    🔐
+                </div>
+
+                <h3>
+                    Account
+                </h3>
+
+                <div class="info-value">
+                    Protected
+                </div>
+
+            </div>
+
+
+        </section>
+
+
+        <!-- ================= TIPS ================= -->
+
+        <section class="tips">
+
+            <h2>
+                💡 Budget Management Tip
+            </h2>
+
+            <p>
+                Set a realistic budget for your business and
+                regularly record your income and expenses.
+                Keeping your transactions updated helps you
+                understand how much money is available and
+                how much has already been spent.
+            </p>
+
+        </section>
+
+
+    </main>
+
+
+    <!-- ================= FOOTER ================= -->
+
+    <footer>
+
+        © 2026 Micro Budgeting for Small Businesses
+
+    </footer>
+
+
+</body>
+
+</html>
