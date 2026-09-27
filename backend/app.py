@@ -238,10 +238,7 @@ def home():
 
     cursor = db.cursor()
 
-    # -----------------------------------------------------
     # TOTAL INCOME
-    # -----------------------------------------------------
-
     cursor.execute(
         """
         SELECT COALESCE(SUM(amount), 0)
@@ -254,11 +251,7 @@ def home():
 
     total_income = cursor.fetchone()[0]
 
-
-    # -----------------------------------------------------
     # TOTAL EXPENSE
-    # -----------------------------------------------------
-
     cursor.execute(
         """
         SELECT COALESCE(SUM(amount), 0)
@@ -271,11 +264,7 @@ def home():
 
     total_expense = cursor.fetchone()[0]
 
-
-    # -----------------------------------------------------
     # TOTAL BUDGET
-    # -----------------------------------------------------
-
     cursor.execute(
         """
         SELECT COALESCE(MAX(budget_amount), 0)
@@ -285,25 +274,13 @@ def home():
 
     budget = cursor.fetchone()[0]
 
-
-    # -----------------------------------------------------
     # CURRENT BALANCE
-    # -----------------------------------------------------
-
     balance = total_income - total_expense
 
-
-    # -----------------------------------------------------
     # REMAINING BUDGET
-    # -----------------------------------------------------
-
     remaining_budget = budget - total_expense
 
-
-    # -----------------------------------------------------
     # CHART PERCENTAGES
-    # -----------------------------------------------------
-
     total_money = total_income + total_expense
 
     if total_money > 0:
@@ -319,14 +296,10 @@ def home():
     else:
 
         income_percentage = 0
-
         expense_percentage = 0
 
-
     cursor.close()
-
     db.close()
-
 
     return render_template(
         "index.html",
@@ -361,33 +334,21 @@ def add_transaction():
 
     if request.method == "POST":
 
-        transaction_type = request.form[
-            "transaction_type"
-        ]
+        transaction_type = request.form["transaction_type"]
 
-        amount = request.form[
-            "amount"
-        ]
+        amount = request.form["amount"]
 
-        category = request.form[
-            "category"
-        ]
+        category = request.form["category"]
 
-        transaction_date = request.form[
-            "transaction_date"
-        ]
+        transaction_date = request.form["transaction_date"]
 
-        description = request.form[
-            "description"
-        ]
+        description = request.form["description"]
 
         user_id = session["user_id"]
-
 
         db = get_db_connection()
 
         cursor = db.cursor()
-
 
         cursor.execute(
             """
@@ -420,20 +381,14 @@ def add_transaction():
             )
         )
 
-
         db.commit()
 
         cursor.close()
-
         db.close()
-
 
         return redirect("/transactions")
 
-
-    return render_template(
-        "add.html"
-    )
+    return render_template("add.html")
 
 
 # =========================================================
@@ -447,21 +402,17 @@ def transactions():
     if not login_required():
         return redirect("/login")
 
-
     search = request.args.get(
         "search",
         ""
     ).strip()
-
 
     transaction_type = request.args.get(
         "type",
         ""
     ).strip()
 
-
     user_id = session["user_id"]
-
 
     db = get_db_connection()
 
@@ -469,23 +420,15 @@ def transactions():
         cursor_factory=RealDictCursor
     )
 
-
     query = """
         SELECT *
         FROM transactions
         WHERE user_id = %s
     """
 
+    parameters = [user_id]
 
-    parameters = [
-        user_id
-    ]
-
-
-    # -----------------------------------------------------
     # SEARCH
-    # -----------------------------------------------------
-
     if search:
 
         query += """
@@ -500,16 +443,10 @@ def transactions():
         search_value = "%" + search + "%"
 
         parameters.append(search_value)
-
+        parameters.append(search_value)
         parameters.append(search_value)
 
-        parameters.append(search_value)
-
-
-    # -----------------------------------------------------
     # TYPE FILTER
-    # -----------------------------------------------------
-
     if transaction_type == "Income":
 
         query += """
@@ -517,7 +454,6 @@ def transactions():
         """
 
         parameters.append("Income")
-
 
     elif transaction_type == "Expense":
 
@@ -527,29 +463,20 @@ def transactions():
 
         parameters.append("Expense")
 
-
-    # -----------------------------------------------------
     # ORDER
-    # -----------------------------------------------------
-
     query += """
         ORDER BY transaction_id DESC
     """
-
 
     cursor.execute(
         query,
         tuple(parameters)
     )
 
-
     data = cursor.fetchall()
 
-
     cursor.close()
-
     db.close()
-
 
     return render_template(
         "transactions.html",
@@ -575,9 +502,7 @@ def edit_transaction(transaction_id):
     if not login_required():
         return redirect("/login")
 
-
     user_id = session["user_id"]
-
 
     db = get_db_connection()
 
@@ -585,33 +510,22 @@ def edit_transaction(transaction_id):
         cursor_factory=RealDictCursor
     )
 
-
-    # -----------------------------------------------------
     # UPDATE
-    # -----------------------------------------------------
-
     if request.method == "POST":
 
         transaction_type = request.form[
             "transaction_type"
         ]
 
-        amount = request.form[
-            "amount"
-        ]
+        amount = request.form["amount"]
 
-        category = request.form[
-            "category"
-        ]
+        category = request.form["category"]
 
         transaction_date = request.form[
             "transaction_date"
         ]
 
-        description = request.form[
-            "description"
-        ]
-
+        description = request.form["description"]
 
         cursor.execute(
             """
@@ -636,24 +550,14 @@ def edit_transaction(transaction_id):
             )
         )
 
-
         db.commit()
 
-
         cursor.close()
-
         db.close()
 
+        return redirect("/transactions")
 
-        return redirect(
-            "/transactions"
-        )
-
-
-    # -----------------------------------------------------
     # GET TRANSACTION
-    # -----------------------------------------------------
-
     cursor.execute(
         """
         SELECT *
@@ -667,19 +571,14 @@ def edit_transaction(transaction_id):
         )
     )
 
-
     transaction = cursor.fetchone()
 
-
     cursor.close()
-
     db.close()
-
 
     if transaction is None:
 
         return "Transaction not found."
-
 
     return render_template(
         "edit.html",
@@ -699,14 +598,11 @@ def delete_transaction(transaction_id):
     if not login_required():
         return redirect("/login")
 
-
     user_id = session["user_id"]
-
 
     db = get_db_connection()
 
     cursor = db.cursor()
-
 
     cursor.execute(
         """
@@ -720,18 +616,12 @@ def delete_transaction(transaction_id):
         )
     )
 
-
     db.commit()
 
-
     cursor.close()
-
     db.close()
 
-
-    return redirect(
-        "/transactions"
-    )
+    return redirect("/transactions")
 
 
 # =========================================================
@@ -747,20 +637,17 @@ def budget_page():
     if not login_required():
         return redirect("/login")
 
-
     db = get_db_connection()
 
     cursor = db.cursor(
         cursor_factory=RealDictCursor
     )
 
-
     if request.method == "POST":
 
         budget_amount = request.form[
             "budget_amount"
         ]
-
 
         cursor.execute(
             """
@@ -771,9 +658,7 @@ def budget_page():
             """
         )
 
-
         existing = cursor.fetchone()
-
 
         if existing:
 
@@ -789,7 +674,6 @@ def budget_page():
                 )
             )
 
-
         else:
 
             cursor.execute(
@@ -804,9 +688,7 @@ def budget_page():
                 )
             )
 
-
         db.commit()
-
 
     cursor.execute(
         """
@@ -819,19 +701,12 @@ def budget_page():
         """
     )
 
-
     result = cursor.fetchone()
 
-
-    budget = result[
-        "budget_amount"
-    ]
-
+    budget = result["budget_amount"]
 
     cursor.close()
-
     db.close()
-
 
     return render_template(
         "budget.html",
@@ -840,13 +715,23 @@ def budget_page():
 
 
 # =========================================================
-# START FLASK
+# CREATE TABLES
+# =========================================================
+#
+# IMPORTANT:
+# This is outside the __main__ block.
+# Therefore Render + Gunicorn will also create
+# the tables when the application starts.
+#
+
+initialize_database()
+
+
+# =========================================================
+# START FLASK LOCALLY
 # =========================================================
 
 if __name__ == "__main__":
-
-    # Create tables when the application starts
-    initialize_database()
 
     app.run(
         debug=True
