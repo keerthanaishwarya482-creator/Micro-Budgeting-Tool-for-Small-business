@@ -2,6 +2,10 @@ from flask import Flask, render_template, request, redirect, session
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 
 app = Flask(__name__)
 
@@ -25,6 +29,72 @@ def get_db_connection():
         )
 
     return psycopg2.connect(database_url)
+
+
+# =========================================================
+# EMAIL NOTIFICATION
+# =========================================================
+
+def send_registration_email(name, email):
+
+    sender_email = os.getenv("EMAIL_ADDRESS")
+    app_password = os.getenv("EMAIL_APP_PASSWORD")
+    notify_email = os.getenv("NOTIFY_EMAIL")
+
+    # If email settings are missing, skip email
+    if not sender_email or not app_password or not notify_email:
+        print("Email settings are missing.")
+        return
+
+    try:
+
+        message = MIMEMultipart()
+
+        message["From"] = sender_email
+        message["To"] = notify_email
+        message["Subject"] = "New Micro Budgeting App Registration"
+
+        body = f"""
+A new user has registered in your Micro Budgeting App.
+
+Name: {name}
+Email: {email}
+
+The user has successfully created an account.
+"""
+
+        message.attach(
+            MIMEText(body, "plain")
+        )
+
+        # Gmail SMTP
+        with smtplib.SMTP(
+            "smtp.gmail.com",
+            587
+        ) as server:
+
+            server.starttls()
+
+            server.login(
+                sender_email,
+                app_password
+            )
+
+            server.sendmail(
+                sender_email,
+                notify_email,
+                message.as_string()
+            )
+
+        print("Registration email sent successfully.")
+
+    except Exception as error:
+
+        # Email failure should not stop registration
+        print(
+            "Email notification failed:",
+            error
+        )
 
 
 # =========================================================
@@ -101,6 +171,7 @@ def register():
         db = get_db_connection()
         cursor = db.cursor()
 
+        # Check existing user
         cursor.execute(
             """
             SELECT user_id
@@ -119,11 +190,13 @@ def register():
 
             return "Email already registered. Please login."
 
+        # Create new user
         cursor.execute(
             """
             INSERT INTO users
             (name, email, password)
             VALUES (%s, %s, %s)
+            RETURNING user_id
             """,
             (
                 name,
@@ -132,10 +205,18 @@ def register():
             )
         )
 
+        cursor.fetchone()
+
         db.commit()
 
         cursor.close()
         db.close()
+
+        # Send notification email
+        send_registration_email(
+            name,
+            email
+        )
 
         return redirect("/login")
 
@@ -366,373 +447,4 @@ def add_transaction():
                 %s,
                 %s,
                 %s,
-                %s,
-                %s,
-                %s
-            )
-            """,
-            (
-                transaction_type,
-                amount,
-                category,
-                transaction_date,
-                description,
-                user_id
-            )
-        )
-
-        db.commit()
-
-        cursor.close()
-        db.close()
-
-        return redirect("/transactions")
-
-    return render_template("add.html")
-
-
-# =========================================================
-# TRANSACTIONS
-# SEARCH + FILTER
-# =========================================================
-
-@app.route("/transactions")
-def transactions():
-
-    if not login_required():
-        return redirect("/login")
-
-    search = request.args.get(
-        "search",
-        ""
-    ).strip()
-
-    transaction_type = request.args.get(
-        "type",
-        ""
-    ).strip()
-
-    user_id = session["user_id"]
-
-    db = get_db_connection()
-
-    cursor = db.cursor(
-        cursor_factory=RealDictCursor
-    )
-
-    query = """
-        SELECT *
-        FROM transactions
-        WHERE user_id = %s
-    """
-
-    parameters = [user_id]
-
-    # SEARCH
-    if search:
-
-        query += """
-            AND
-            (
-                transaction_type ILIKE %s
-                OR category ILIKE %s
-                OR description ILIKE %s
-            )
-        """
-
-        search_value = "%" + search + "%"
-
-        parameters.append(search_value)
-        parameters.append(search_value)
-        parameters.append(search_value)
-
-    # TYPE FILTER
-    if transaction_type == "Income":
-
-        query += """
-            AND transaction_type = %s
-        """
-
-        parameters.append("Income")
-
-    elif transaction_type == "Expense":
-
-        query += """
-            AND transaction_type = %s
-        """
-
-        parameters.append("Expense")
-
-    # ORDER
-    query += """
-        ORDER BY transaction_id DESC
-    """
-
-    cursor.execute(
-        query,
-        tuple(parameters)
-    )
-
-    data = cursor.fetchall()
-
-    cursor.close()
-    db.close()
-
-    return render_template(
-        "transactions.html",
-
-        transactions=data,
-
-        search=search,
-
-        transaction_type=transaction_type
-    )
-
-
-# =========================================================
-# EDIT TRANSACTION
-# =========================================================
-
-@app.route(
-    "/edit/<int:transaction_id>",
-    methods=["GET", "POST"]
-)
-def edit_transaction(transaction_id):
-
-    if not login_required():
-        return redirect("/login")
-
-    user_id = session["user_id"]
-
-    db = get_db_connection()
-
-    cursor = db.cursor(
-        cursor_factory=RealDictCursor
-    )
-
-    # UPDATE
-    if request.method == "POST":
-
-        transaction_type = request.form[
-            "transaction_type"
-        ]
-
-        amount = request.form["amount"]
-
-        category = request.form["category"]
-
-        transaction_date = request.form[
-            "transaction_date"
-        ]
-
-        description = request.form["description"]
-
-        cursor.execute(
-            """
-            UPDATE transactions
-            SET
-                transaction_type = %s,
-                amount = %s,
-                category = %s,
-                transaction_date = %s,
-                description = %s
-            WHERE transaction_id = %s
-            AND user_id = %s
-            """,
-            (
-                transaction_type,
-                amount,
-                category,
-                transaction_date,
-                description,
-                transaction_id,
-                user_id
-            )
-        )
-
-        db.commit()
-
-        cursor.close()
-        db.close()
-
-        return redirect("/transactions")
-
-    # GET TRANSACTION
-    cursor.execute(
-        """
-        SELECT *
-        FROM transactions
-        WHERE transaction_id = %s
-        AND user_id = %s
-        """,
-        (
-            transaction_id,
-            user_id
-        )
-    )
-
-    transaction = cursor.fetchone()
-
-    cursor.close()
-    db.close()
-
-    if transaction is None:
-
-        return "Transaction not found."
-
-    return render_template(
-        "edit.html",
-        transaction=transaction
-    )
-
-
-# =========================================================
-# DELETE TRANSACTION
-# =========================================================
-
-@app.route(
-    "/delete/<int:transaction_id>"
-)
-def delete_transaction(transaction_id):
-
-    if not login_required():
-        return redirect("/login")
-
-    user_id = session["user_id"]
-
-    db = get_db_connection()
-
-    cursor = db.cursor()
-
-    cursor.execute(
-        """
-        DELETE FROM transactions
-        WHERE transaction_id = %s
-        AND user_id = %s
-        """,
-        (
-            transaction_id,
-            user_id
-        )
-    )
-
-    db.commit()
-
-    cursor.close()
-    db.close()
-
-    return redirect("/transactions")
-
-
-# =========================================================
-# BUDGET
-# =========================================================
-
-@app.route(
-    "/budget",
-    methods=["GET", "POST"]
-)
-def budget_page():
-
-    if not login_required():
-        return redirect("/login")
-
-    db = get_db_connection()
-
-    cursor = db.cursor(
-        cursor_factory=RealDictCursor
-    )
-
-    if request.method == "POST":
-
-        budget_amount = request.form[
-            "budget_amount"
-        ]
-
-        cursor.execute(
-            """
-            SELECT budget_id
-            FROM budget
-            ORDER BY budget_id
-            LIMIT 1
-            """
-        )
-
-        existing = cursor.fetchone()
-
-        if existing:
-
-            cursor.execute(
-                """
-                UPDATE budget
-                SET budget_amount = %s
-                WHERE budget_id = %s
-                """,
-                (
-                    budget_amount,
-                    existing["budget_id"]
-                )
-            )
-
-        else:
-
-            cursor.execute(
-                """
-                INSERT INTO budget
-                (budget_amount)
-                VALUES
-                (%s)
-                """,
-                (
-                    budget_amount
-                )
-            )
-
-        db.commit()
-
-    cursor.execute(
-        """
-        SELECT
-            COALESCE(
-                MAX(budget_amount),
-                0
-            ) AS budget_amount
-        FROM budget
-        """
-    )
-
-    result = cursor.fetchone()
-
-    budget = result["budget_amount"]
-
-    cursor.close()
-    db.close()
-
-    return render_template(
-        "budget.html",
-        budget=budget
-    )
-
-
-# =========================================================
-# CREATE TABLES
-# =========================================================
-#
-# IMPORTANT:
-# This is outside the __main__ block.
-# Therefore Render + Gunicorn will also create
-# the tables when the application starts.
-#
-
-initialize_database()
-
-
-# =========================================================
-# START FLASK LOCALLY
-# =========================================================
-
-if __name__ == "__main__":
-
-    app.run(
-        debug=True
-    )
+               
