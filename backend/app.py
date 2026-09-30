@@ -1,872 +1,372 @@
 import os
 import smtplib
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
-from flask import (
-    Flask,
-    render_template,
-    request,
-    redirect,
-    url_for,
-    session,
-    flash
-)
-
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-
 app = Flask(__name__)
-
-app.secret_key = os.getenv(
-    "SECRET_KEY",
-    "micro-budgeting-secret-key"
-)
+app.secret_key = os.getenv("SECRET_KEY", "micro-budget-secret")
 
 
-# =========================================================
-# DATABASE CONNECTION
-# =========================================================
-
-def get_db_connection():
-
-    database_url = os.getenv("DATABASE_URL")
-
-    if not database_url:
-        raise Exception("DATABASE_URL is not configured.")
-
-    return psycopg2.connect(database_url)
+# DATABASE
+def get_db():
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
 
 
-# =========================================================
-# CREATE DATABASE TABLES
-# =========================================================
+def create_tables():
+    conn = get_db()
+    cur = conn.cursor()
 
-def initialize_database():
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS users ("
+        "user_id SERIAL PRIMARY KEY, "
+        "name VARCHAR(100) NOT NULL, "
+        "email VARCHAR(150) UNIQUE NOT NULL, "
+        "password VARCHAR(255) NOT NULL)"
+    )
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS transactions ("
+        "transaction_id SERIAL PRIMARY KEY, "
+        "transaction_type VARCHAR(20) NOT NULL, "
+        "amount NUMERIC(12,2) NOT NULL, "
+        "category VARCHAR(100), "
+        "transaction_date DATE NOT NULL, "
+        "description TEXT, "
+        "user_id INTEGER REFERENCES users(user_id))"
+    )
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id SERIAL PRIMARY KEY,
-            name VARCHAR(100) NOT NULL,
-            email VARCHAR(150) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            transaction_id SERIAL PRIMARY KEY,
-            transaction_type VARCHAR(20) NOT NULL,
-            amount NUMERIC(12,2) NOT NULL,
-            category VARCHAR(100),
-            transaction_date DATE NOT NULL,
-            description TEXT,
-            user_id INTEGER REFERENCES users(user_id)
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS budget (
-            budget_id SERIAL PRIMARY KEY,
-            user_id INTEGER REFERENCES users(user_id),
-            budget_amount NUMERIC(12,2) NOT NULL DEFAULT 0
-        )
-    """)
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS budget ("
+        "budget_id SERIAL PRIMARY KEY, "
+        "user_id INTEGER UNIQUE REFERENCES users(user_id), "
+        "budget_amount NUMERIC(12,2) DEFAULT 0)"
+    )
 
     conn.commit()
-
-    cursor.close()
+    cur.close()
     conn.close()
 
 
-# =========================================================
-# EMAIL NOTIFICATION
-# =========================================================
-
+# EMAIL
 def send_registration_email(name, email):
+    sender = os.getenv("EMAIL_ADDRESS")
+    password = os.getenv("EMAIL_APP_PASSWORD")
+    receiver = os.getenv("NOTIFY_EMAIL")
 
-    sender_email = os.getenv("EMAIL_ADDRESS")
-    app_password = os.getenv("EMAIL_APP_PASSWORD")
-    notify_email = os.getenv("NOTIFY_EMAIL")
-
-    if not sender_email or not app_password or not notify_email:
-
+    if not sender or not password or not receiver:
         print("Email settings are missing.")
-
         return
 
     try:
+        body = "New Micro Budgeting App Registration\n\n"
+        body += "Name: " + name + "\n"
+        body += "Email: " + email + "\n"
+        body += "\nA new user has registered successfully."
 
-        message = MIMEMultipart()
-
-        message["From"] = sender_email
-        message["To"] = notify_email
+        message = MIMEText(body)
         message["Subject"] = "New Micro Budgeting App Registration"
+        message["From"] = sender
+        message["To"] = receiver
 
-        body = f"""
-New user registered in Micro Budgeting App.
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender, password)
+        server.send_message(message)
+        server.quit()
 
-Name: {name}
-Email: {email}
+        print("Registration email sent.")
 
-The user has successfully created an account.
-"""
-
-        message.attach(
-            MIMEText(body, "plain")
-        )
-
-        with smtplib.SMTP(
-            "smtp.gmail.com",
-            587
-        ) as server:
-
-            server.starttls()
-
-            server.login(
-                sender_email,
-                app_password
-            )
-
-            server.sendmail(
-                sender_email,
-                notify_email,
-                message.as_string()
-            )
-
-        print(
-            "Registration email sent successfully."
-        )
-
-    except Exception as error:
-
-        print(
-            "Email notification failed:",
-            error
-        )
+    except Exception as e:
+        print("Email error:", e)
 
 
-# =========================================================
+# LOGIN CHECK
+def logged_in():
+    return "user_id" in session
+
+
 # REGISTER
-# =========================================================
-
-@app.route(
-    "/register",
-    methods=["GET", "POST"]
-)
+@app.route("/register", methods=["GET", "POST"])
 def register():
 
     if request.method == "POST":
 
-        name = request.form.get(
-            "name",
-            ""
-        ).strip()
-
-        email = request.form.get(
-            "email",
-            ""
-        ).strip()
-
-        password = request.form.get(
-            "password",
-            ""
-        )
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
 
         if not name or not email or not password:
+            flash("Please fill all fields.")
+            return redirect(url_for("register"))
 
-            flash(
-                "Please fill all fields.",
-                "error"
-            )
+        conn = get_db()
+        cur = conn.cursor()
 
-            return redirect(
-                url_for("register")
-            )
+        cur.execute(
+            "SELECT user_id FROM users WHERE email=%s",
+            (email,)
+        )
 
-        conn = get_db_connection()
-
-        cursor = conn.cursor()
-
-        try:
-
-            cursor.execute(
-                """
-                SELECT user_id
-                FROM users
-                WHERE email = %s
-                """,
-                (email,)
-            )
-
-            existing_user = cursor.fetchone()
-
-            if existing_user:
-
-                flash(
-                    "Email already registered.",
-                    "error"
-                )
-
-                cursor.close()
-                conn.close()
-
-                return redirect(
-                    url_for("register")
-                )
-
-            cursor.execute(
-                """
-                INSERT INTO users
-                (
-                    name,
-                    email,
-                    password
-                )
-                VALUES
-                (
-                    %s,
-                    %s,
-                    %s
-                )
-                RETURNING user_id
-                """,
-                (
-                    name,
-                    email,
-                    password
-                )
-            )
-
-            user_id = cursor.fetchone()[0]
-
-            cursor.execute(
-                """
-                INSERT INTO budget
-                (
-                    user_id,
-                    budget_amount
-                )
-                VALUES
-                (
-                    %s,
-                    %s
-                )
-                """,
-                (
-                    user_id,
-                    0
-                )
-            )
-
-            conn.commit()
-
-            cursor.close()
+        if cur.fetchone():
+            cur.close()
             conn.close()
+            flash("Email already registered.")
+            return redirect(url_for("register"))
 
-            # Send email after successful registration
-            send_registration_email(
-                name,
-                email
-            )
+        cur.execute(
+            "INSERT INTO users (name, email, password) "
+            "VALUES (%s, %s, %s) RETURNING user_id",
+            (name, email, password)
+        )
 
-            flash(
-                "Registration successful. Please login.",
-                "success"
-            )
+        user_id = cur.fetchone()[0]
 
-            return redirect(
-                url_for("login")
-            )
+        cur.execute(
+            "INSERT INTO budget (user_id, budget_amount) VALUES (%s, %s)",
+            (user_id, 0)
+        )
 
-        except Exception as error:
+        conn.commit()
+        cur.close()
+        conn.close()
 
-            conn.rollback()
+        send_registration_email(name, email)
 
-            cursor.close()
-            conn.close()
+        flash("Registration successful. Please login.")
+        return redirect(url_for("login"))
 
-            print(
-                "Registration error:",
-                error
-            )
-
-            flash(
-                "Registration failed. Please try again.",
-                "error"
-            )
-
-            return redirect(
-                url_for("register")
-            )
-
-    return render_template(
-        "register.html"
-    )
+    return render_template("register.html")
 
 
-# =========================================================
 # LOGIN
-# =========================================================
-
-@app.route(
-    "/login",
-    methods=["GET", "POST"]
-)
+@app.route("/login", methods=["GET", "POST"])
 def login():
 
     if request.method == "POST":
 
-        email = request.form.get(
-            "email",
-            ""
-        ).strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
 
-        password = request.form.get(
-            "password",
-            ""
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        cur.execute(
+            "SELECT * FROM users WHERE email=%s AND password=%s",
+            (email, password)
         )
 
-        conn = get_db_connection()
+        user = cur.fetchone()
 
-        cursor = conn.cursor(
-            cursor_factory=RealDictCursor
-        )
-
-        cursor.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE email = %s
-            AND password = %s
-            """,
-            (
-                email,
-                password
-            )
-        )
-
-        user = cursor.fetchone()
-
-        cursor.close()
+        cur.close()
         conn.close()
 
         if user:
-
             session["user_id"] = user["user_id"]
-
             session["user_name"] = user["name"]
-
             session["user_email"] = user["email"]
 
-            return redirect(
-                url_for("dashboard")
-            )
+            return redirect(url_for("dashboard"))
 
-        flash(
-            "Invalid email or password.",
-            "error"
-        )
+        flash("Invalid email or password.")
+        return redirect(url_for("login"))
 
-        return redirect(
-            url_for("login")
-        )
-
-    return render_template(
-        "login.html"
-    )
+    return render_template("login.html")
 
 
-# =========================================================
 # LOGOUT
-# =========================================================
-
 @app.route("/logout")
 def logout():
-
     session.clear()
-
-    return redirect(
-        url_for("login")
-    )
+    return redirect(url_for("login"))
 
 
-# =========================================================
-# PROFILE
-# =========================================================
-
-@app.route("/profile")
-def profile():
-
-    if "user_id" not in session:
-
-        return redirect(
-            url_for("login")
-        )
-
-    conn = get_db_connection()
-
-    cursor = conn.cursor(
-        cursor_factory=RealDictCursor
-    )
-
-    cursor.execute(
-        """
-        SELECT
-            user_id,
-            name,
-            email
-        FROM users
-        WHERE user_id = %s
-        """,
-        (
-            session["user_id"],
-        )
-    )
-
-    user = cursor.fetchone()
-
-    cursor.close()
-    conn.close()
-
-    return render_template(
-        "profile.html",
-        user=user
-    )
-
-
-# =========================================================
 # DASHBOARD
-# =========================================================
-
 @app.route("/")
 def dashboard():
 
-    if "user_id" not in session:
-
-        return redirect(
-            url_for("login")
-        )
+    if not logged_in():
+        return redirect(url_for("login"))
 
     user_id = session["user_id"]
 
-    conn = get_db_connection()
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    cursor = conn.cursor(
-        cursor_factory=RealDictCursor
+    cur.execute(
+        "SELECT COALESCE(SUM(amount),0) AS total "
+        "FROM transactions "
+        "WHERE user_id=%s AND transaction_type='Income'",
+        (user_id,)
+    )
+    income = float(cur.fetchone()["total"])
+
+    cur.execute(
+        "SELECT COALESCE(SUM(amount),0) AS total "
+        "FROM transactions "
+        "WHERE user_id=%s AND transaction_type='Expense'",
+        (user_id,)
+    )
+    expense = float(cur.fetchone()["total"])
+
+    cur.execute(
+        "SELECT budget_amount FROM budget WHERE user_id=%s",
+        (user_id,)
     )
 
-    # Income
+    budget_row = cur.fetchone()
+    budget_amount = float(budget_row["budget_amount"]) if budget_row else 0
 
-    cursor.execute(
-        """
-        SELECT
-            COALESCE(SUM(amount), 0) AS total
-        FROM transactions
-        WHERE user_id = %s
-        AND transaction_type = 'Income'
-        """,
-        (
-            user_id,
-        )
+    cur.execute(
+        "SELECT * FROM transactions "
+        "WHERE user_id=%s "
+        "ORDER BY transaction_id DESC LIMIT 5",
+        (user_id,)
     )
 
-    income_result = cursor.fetchone()
+    recent = cur.fetchall()
 
-    total_income = float(
-        income_result["total"] or 0
-    )
-
-    # Expense
-
-    cursor.execute(
-        """
-        SELECT
-            COALESCE(SUM(amount), 0) AS total
-        FROM transactions
-        WHERE user_id = %s
-        AND transaction_type = 'Expense'
-        """,
-        (
-            user_id,
-        )
-    )
-
-    expense_result = cursor.fetchone()
-
-    total_expense = float(
-        expense_result["total"] or 0
-    )
-
-    # Balance
-
-    balance = (
-        total_income -
-        total_expense
-    )
-
-    # Budget
-
-    cursor.execute(
-        """
-        SELECT budget_amount
-        FROM budget
-        WHERE user_id = %s
-        """,
-        (
-            user_id,
-        )
-    )
-
-    budget_result = cursor.fetchone()
-
-    budget_amount = float(
-        budget_result["budget_amount"]
-        if budget_result
-        else 0
-    )
-
-    remaining_budget = (
-        budget_amount -
-        total_expense
-    )
-
-    # Recent transactions
-
-    cursor.execute(
-        """
-        SELECT
-            transaction_id,
-            transaction_type,
-            amount,
-            category,
-            transaction_date,
-            description
-        FROM transactions
-        WHERE user_id = %s
-        ORDER BY transaction_id DESC
-        LIMIT 5
-        """,
-        (
-            user_id,
-        )
-    )
-
-    recent_transactions = cursor.fetchall()
-
-    cursor.close()
+    cur.close()
     conn.close()
 
     return render_template(
         "index.html",
-        total_income=total_income,
-        total_expense=total_expense,
-        balance=balance,
+        total_income=income,
+        total_expense=expense,
+        balance=income - expense,
         budget_amount=budget_amount,
-        remaining_budget=remaining_budget,
-        recent_transactions=recent_transactions
+        remaining_budget=budget_amount - expense,
+        recent_transactions=recent
     )
 
 
-# =========================================================
 # ADD TRANSACTION
-# =========================================================
-
-@app.route(
-    "/add",
-    methods=["GET", "POST"]
-)
+@app.route("/add", methods=["GET", "POST"])
 def add_transaction():
 
-    if "user_id" not in session:
-
-        return redirect(
-            url_for("login")
-        )
+    if not logged_in():
+        return redirect(url_for("login"))
 
     if request.method == "POST":
 
-        transaction_type = request.form.get(
-            "transaction_type"
-        )
+        conn = get_db()
+        cur = conn.cursor()
 
-        amount = request.form.get(
-            "amount"
-        )
-
-        category = request.form.get(
-            "category",
-            ""
-        )
-
-        transaction_date = request.form.get(
-            "transaction_date"
-        )
-
-        description = request.form.get(
-            "description",
-            ""
-        )
-
-        user_id = session["user_id"]
-
-        conn = get_db_connection()
-
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO transactions
+        cur.execute(
+            "INSERT INTO transactions "
+            "(transaction_type, amount, category, transaction_date, "
+            "description, user_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (
-                transaction_type,
-                amount,
-                category,
-                transaction_date,
-                description,
-                user_id
-            )
-            VALUES
-            (
-                %s,
-                %s,
-                %s,
-                %s,
-                %s,
-                %s
-            )
-            """,
-            (
-                transaction_type,
-                amount,
-                category,
-                transaction_date,
-                description,
-                user_id
+                request.form["transaction_type"],
+                request.form["amount"],
+                request.form["category"],
+                request.form["transaction_date"],
+                request.form["description"],
+                session["user_id"]
             )
         )
 
         conn.commit()
-
-        cursor.close()
+        cur.close()
         conn.close()
 
-        return redirect(
-            url_for("transactions")
-        )
+        return redirect(url_for("transactions"))
 
-    return render_template(
-        "add.html"
-    )
+    return render_template("add.html")
 
 
-# =========================================================
-# VIEW / SEARCH TRANSACTIONS
-# =========================================================
-
+# TRANSACTIONS
 @app.route("/transactions")
 def transactions():
 
-    if "user_id" not in session:
+    if not logged_in():
+        return redirect(url_for("login"))
 
-        return redirect(
-            url_for("login")
-        )
+    search = request.args.get("search", "")
+    type_filter = request.args.get("type", "")
 
-    user_id = session["user_id"]
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    search = request.args.get(
-        "search",
-        ""
-    ).strip()
-
-    transaction_type = request.args.get(
-        "type",
-        ""
-    ).strip()
-
-    conn = get_db_connection()
-
-    cursor = conn.cursor(
-        cursor_factory=RealDictCursor
-    )
-
-    query = """
-        SELECT
-            transaction_id,
-            transaction_type,
-            amount,
-            category,
-            transaction_date,
-            description
-        FROM transactions
-        WHERE user_id = %s
-    """
-
-    parameters = [
-        user_id
-    ]
+    query = "SELECT * FROM transactions WHERE user_id=%s"
+    values = [session["user_id"]]
 
     if search:
+        query += " AND (category ILIKE %s OR description ILIKE %s)"
+        values += ["%" + search + "%", "%" + search + "%"]
 
-        query += """
-            AND
-            (
-                category ILIKE %s
-                OR description ILIKE %s
-            )
-        """
+    if type_filter:
+        query += " AND transaction_type=%s"
+        values.append(type_filter)
 
-        search_value = (
-            "%" +
-            search +
-            "%"
-        )
+    query += " ORDER BY transaction_id DESC"
 
-        parameters.extend(
-            [
-                search_value,
-                search_value
-            ]
-        )
+    cur.execute(query, values)
+    rows = cur.fetchall()
 
-    if transaction_type:
-
-        query += """
-            AND transaction_type = %s
-        """
-
-        parameters.append(
-            transaction_type
-        )
-
-    query += """
-        ORDER BY transaction_id DESC
-    """
-
-    cursor.execute(
-        query,
-        parameters
-    )
-
-    transaction_list = cursor.fetchall()
-
-    cursor.close()
+    cur.close()
     conn.close()
 
     return render_template(
         "transactions.html",
-        transactions=transaction_list,
+        transactions=rows,
         search=search,
-        selected_type=transaction_type
+        selected_type=type_filter
     )
 
 
-# =========================================================
 # EDIT TRANSACTION
-# =========================================================
+@app.route("/edit/<int:id>", methods=["GET", "POST"])
+def edit_transaction(id):
 
-@app.route(
-    "/edit/<int:transaction_id>",
-    methods=["GET", "POST"]
-)
-def edit_transaction(
-    transaction_id
-):
+    if not logged_in():
+        return redirect(url_for("login"))
 
-    if "user_id" not in session:
-
-        return redirect(
-            url_for("login")
-        )
-
-    user_id = session["user_id"]
-
-    conn = get_db_connection()
-
-    cursor = conn.cursor(
-        cursor_factory=RealDictCursor
-    )
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == "POST":
 
-        transaction_type = request.form.get(
-            "transaction_type"
-        )
-
-        amount = request.form.get(
-            "amount"
-        )
-
-        category = request.form.get(
-            "category",
-            ""
-        )
-
-        transaction_date = request.form.get(
-            "transaction_date"
-        )
-
-        description = request.form.get(
-            "description",
-            ""
-        )
-
-        cursor.execute(
-            """
-            UPDATE transactions
-            SET
-                transaction_type = %s,
-                amount = %s,
-                category = %s,
-                transaction_date = %s,
-                description = %s
-            WHERE transaction_id = %s
-            AND user_id = %s
-            """,
+        cur.execute(
+            "UPDATE transactions SET "
+            "transaction_type=%s, "
+            "amount=%s, "
+            "category=%s, "
+            "transaction_date=%s, "
+            "description=%s "
+            "WHERE transaction_id=%s AND user_id=%s",
             (
-                transaction_type,
-                amount,
-                category,
-                transaction_date,
-                description,
-                transaction_id,
-                user_id
+                request.form["transaction_type"],
+                request.form["amount"],
+                request.form["category"],
+                request.form["transaction_date"],
+                request.form["description"],
+                id,
+                session["user_id"]
             )
         )
 
         conn.commit()
-
-        cursor.close()
+        cur.close()
         conn.close()
 
-        return redirect(
-            url_for("transactions")
-        )
+        return redirect(url_for("transactions"))
 
-    cursor.execute(
-        """
-        SELECT *
-        FROM transactions
-        WHERE transaction_id = %s
-        AND user_id = %s
-        """,
-        (
-            transaction_id,
-            user_id
-        )
+    cur.execute(
+        "SELECT * FROM transactions "
+        "WHERE transaction_id=%s AND user_id=%s",
+        (id, session["user_id"])
     )
 
-    transaction = cursor.fetchone()
+    transaction = cur.fetchone()
 
-    cursor.close()
+    cur.close()
     conn.close()
 
     if not transaction:
-
         return "Transaction not found", 404
 
     return render_template(
@@ -875,199 +375,123 @@ def edit_transaction(
     )
 
 
-# =========================================================
 # DELETE TRANSACTION
-# =========================================================
+@app.route("/delete/<int:id>")
+def delete_transaction(id):
 
-@app.route(
-    "/delete/<int:transaction_id>"
-)
-def delete_transaction(
-    transaction_id
-):
+    if not logged_in():
+        return redirect(url_for("login"))
 
-    if "user_id" not in session:
+    conn = get_db()
+    cur = conn.cursor()
 
-        return redirect(
-            url_for("login")
-        )
-
-    user_id = session["user_id"]
-
-    conn = get_db_connection()
-
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        DELETE FROM transactions
-        WHERE transaction_id = %s
-        AND user_id = %s
-        """,
-        (
-            transaction_id,
-            user_id
-        )
+    cur.execute(
+        "DELETE FROM transactions "
+        "WHERE transaction_id=%s AND user_id=%s",
+        (id, session["user_id"])
     )
 
     conn.commit()
-
-    cursor.close()
+    cur.close()
     conn.close()
 
-    return redirect(
-        url_for("transactions")
-    )
+    return redirect(url_for("transactions"))
 
 
-# =========================================================
 # BUDGET
-# =========================================================
-
-@app.route(
-    "/budget",
-    methods=["GET", "POST"]
-)
+@app.route("/budget", methods=["GET", "POST"])
 def budget():
 
-    if "user_id" not in session:
+    if not logged_in():
+        return redirect(url_for("login"))
 
-        return redirect(
-            url_for("login")
-        )
-
-    user_id = session["user_id"]
-
-    conn = get_db_connection()
-
-    cursor = conn.cursor(
-        cursor_factory=RealDictCursor
-    )
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     if request.method == "POST":
 
-        budget_amount = request.form.get(
-            "budget_amount"
+        amount = request.form["budget_amount"]
+
+        cur.execute(
+            "SELECT budget_id FROM budget WHERE user_id=%s",
+            (session["user_id"],)
         )
 
-        cursor.execute(
-            """
-            SELECT budget_id
-            FROM budget
-            WHERE user_id = %s
-            """,
-            (
-                user_id,
+        row = cur.fetchone()
+
+        if row:
+            cur.execute(
+                "UPDATE budget SET budget_amount=%s "
+                "WHERE user_id=%s",
+                (amount, session["user_id"])
             )
-        )
-
-        existing_budget = cursor.fetchone()
-
-        if existing_budget:
-
-            cursor.execute(
-                """
-                UPDATE budget
-                SET budget_amount = %s
-                WHERE user_id = %s
-                """,
-                (
-                    budget_amount,
-                    user_id
-                )
-            )
-
         else:
-
-            cursor.execute(
-                """
-                INSERT INTO budget
-                (
-                    user_id,
-                    budget_amount
-                )
-                VALUES
-                (
-                    %s,
-                    %s
-                )
-                """,
-                (
-                    user_id,
-                    budget_amount
-                )
+            cur.execute(
+                "INSERT INTO budget (user_id, budget_amount) "
+                "VALUES (%s,%s)",
+                (session["user_id"], amount)
             )
 
         conn.commit()
 
-    cursor.execute(
-        """
-        SELECT budget_amount
-        FROM budget
-        WHERE user_id = %s
-        """,
-        (
-            user_id,
-        )
+    cur.execute(
+        "SELECT budget_amount FROM budget WHERE user_id=%s",
+        (session["user_id"],)
     )
 
-    budget_result = cursor.fetchone()
+    row = cur.fetchone()
+    budget_amount = float(row["budget_amount"]) if row else 0
 
-    budget_amount = float(
-        budget_result["budget_amount"]
-        if budget_result
-        else 0
+    cur.execute(
+        "SELECT COALESCE(SUM(amount),0) AS total "
+        "FROM transactions "
+        "WHERE user_id=%s AND transaction_type='Expense'",
+        (session["user_id"],)
     )
 
-    cursor.execute(
-        """
-        SELECT
-            COALESCE(SUM(amount), 0) AS total
-        FROM transactions
-        WHERE user_id = %s
-        AND transaction_type = 'Expense'
-        """,
-        (
-            user_id,
-        )
-    )
+    expense = float(cur.fetchone()["total"])
 
-    expense_result = cursor.fetchone()
-
-    total_expense = float(
-        expense_result["total"] or 0
-    )
-
-    remaining_budget = (
-        budget_amount -
-        total_expense
-    )
-
-    cursor.close()
+    cur.close()
     conn.close()
 
     return render_template(
         "budget.html",
         budget_amount=budget_amount,
-        total_expense=total_expense,
-        remaining_budget=remaining_budget
+        total_expense=expense,
+        remaining_budget=budget_amount - expense
     )
 
 
-# =========================================================
-# INITIALIZE DATABASE
-# IMPORTANT: This runs when Render starts Gunicorn
-# =========================================================
+# PROFILE
+@app.route("/profile")
+def profile():
 
-initialize_database()
+    if not logged_in():
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute(
+        "SELECT user_id, name, email "
+        "FROM users WHERE user_id=%s",
+        (session["user_id"],)
+    )
+
+    user = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "profile.html",
+        user=user
+    )
 
 
-# =========================================================
-# RUN APPLICATION
-# =========================================================
+# CREATE TABLES WHEN RENDER STARTS
+create_tables()
+
 
 if __name__ == "__main__":
-
-    app.run(
-        debug=True
-    )
+    app.run(debug=True)
