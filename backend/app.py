@@ -18,7 +18,11 @@ from psycopg2.extras import RealDictCursor
 
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "micro-budgeting-secret-key")
+
+app.secret_key = os.getenv(
+    "SECRET_KEY",
+    "micro-budgeting-secret-key"
+)
 
 
 # =========================================================
@@ -26,6 +30,7 @@ app.secret_key = os.getenv("SECRET_KEY", "micro-budgeting-secret-key")
 # =========================================================
 
 def get_db_connection():
+
     database_url = os.getenv("DATABASE_URL")
 
     if not database_url:
@@ -73,18 +78,6 @@ def initialize_database():
     """)
 
     conn.commit()
+
     cursor.close()
-    conn.close()
-
-
-# =========================================================
-# EMAIL NOTIFICATION
-# =========================================================
-
-def send_registration_email(name, email):
-
-    sender_email = os.getenv("EMAIL_ADDRESS")
-    app_password = os.getenv("EMAIL_APP_PASSWORD")
-    notify_email = os.getenv("NOTIFY_EMAIL")
-
-   
+    conn.close
